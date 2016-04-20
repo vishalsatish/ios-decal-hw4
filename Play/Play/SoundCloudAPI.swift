@@ -12,7 +12,8 @@ class SoundCloudAPI {
     func loadTracks(completion: (([Track]) -> Void)!) {
         let path = NSBundle.mainBundle().pathForResource("Info", ofType: "plist")
         let clientID = NSDictionary(contentsOfFile: path!)?.valueForKey("client_id") as! String
-        let playlistID = "143983430"
+//        let playlistID = "143983430"
+        let playlistID = "204404835"
         let url = NSURL(string: "http://api.soundcloud.com/playlists/\(playlistID)?client_id=\(clientID)")!
         
         let task = NSURLSession.sharedSession().dataTaskWithURL(url) {

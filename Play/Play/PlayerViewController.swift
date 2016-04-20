@@ -24,6 +24,8 @@ class PlayerViewController: UIViewController {
     var artistLabel: UILabel!
     var titleLabel: UILabel!
     
+    var scrubber: UISlider!
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         view = UIView(frame: UIScreen.mainScreen().bounds)
@@ -61,8 +63,25 @@ class PlayerViewController: UIViewController {
         artistLabel.textAlignment = NSTextAlignment.Center
         artistLabel.textColor = UIColor.grayColor()
         view.addSubview(artistLabel)
+        
+        scrubber = UISlider(frame: CGRect(x: 0.0, y: width + offset * 0.75, width: width, height: 20.0))
+        scrubber.addTarget(self, action: #selector(PlayerViewController.sliderValueDidChange(_:)), forControlEvents: .ValueChanged)
+        scrubber.tintColor = UIColor.blueColor()
+        view.addSubview(scrubber)
     }
     
+    func sliderValueDidChange(sender:UISlider!) {
+        player.seekToTime(CMTimeMake(Int64(scrubber.value), 1))
+        if player.rate == 1.0 {
+            if player.currentItem!.status == .ReadyToPlay {
+                player.play()
+            }
+        }
+    }
+    
+    func timerAction() {
+        scrubber.value = Float(CMTimeGetSeconds(player.currentTime()))
+    }
     
     func loadPlayerButtons() {
         let width = UIScreen.mainScreen().bounds.size.width
@@ -81,7 +100,7 @@ class PlayerViewController: UIViewController {
                                            width / 15.0)
         playPauseButton.setImage(playImage, forState: UIControlState.Normal)
         playPauseButton.setImage(pauseImage, forState: UIControlState.Selected)
-        playPauseButton.addTarget(self, action: "playOrPauseTrack:",
+        playPauseButton.addTarget(self, action: #selector(PlayerViewController.playOrPauseTrack(_:)),
             forControlEvents: UIControlEvents.TouchUpInside)
         view.addSubview(playPauseButton)
         
@@ -91,7 +110,7 @@ class PlayerViewController: UIViewController {
                                           width / 15.0,
                                           width / 15.0)
         previousButton.setImage(previousImage, forState: UIControlState.Normal)
-        previousButton.addTarget(self, action: "previousTrackTapped:",
+        previousButton.addTarget(self, action: #selector(PlayerViewController.previousTrackTapped(_:)),
             forControlEvents: UIControlEvents.TouchUpInside)
         view.addSubview(previousButton)
 
@@ -101,7 +120,7 @@ class PlayerViewController: UIViewController {
                                       width / 15.0,
                                       width / 15.0)
         nextButton.setImage(nextImage, forState: UIControlState.Normal)
-        nextButton.addTarget(self, action: "nextTrackTapped:",
+        nextButton.addTarget(self, action: #selector(PlayerViewController.nextTrackTapped(_:)),
             forControlEvents: UIControlEvents.TouchUpInside)
         view.addSubview(nextButton)
 
@@ -130,7 +149,21 @@ class PlayerViewController: UIViewController {
         let track = tracks[currentIndex]
         let url = NSURL(string: "https://api.soundcloud.com/tracks/\(track.id)/stream?client_id=\(clientID)")!
         // FILL ME IN
-    
+        if player.status == .Unknown {
+            let song = AVPlayerItem(URL: url)
+            player = AVPlayer(playerItem: song)
+        }
+        scrubber.maximumValue = Float(CMTimeGetSeconds(player.currentItem!.asset.duration))
+        NSTimer.scheduledTimerWithTimeInterval(1, target: self, selector: #selector(timerAction), userInfo: nil, repeats: true)
+        if player.rate == 0.0 {
+            if player.currentItem!.status == .ReadyToPlay {
+                player.play()
+                sender.selected = !sender.selected
+            }
+        } else if player.rate == 1.0 {
+            player.pause()
+            sender.selected = !sender.selected
+        }
     }
     
     /* 
@@ -140,7 +173,24 @@ class PlayerViewController: UIViewController {
      * Remember to update the currentIndex
      */
     func nextTrackTapped(sender: UIButton) {
-    
+        let path = NSBundle.mainBundle().pathForResource("Info", ofType: "plist")
+        let clientID = NSDictionary(contentsOfFile: path!)?.valueForKey("client_id") as! String
+        if currentIndex < tracks.count - 1 {
+            scrubber.value = 0.0
+            currentIndex = currentIndex + 1
+            let track = tracks[currentIndex]
+            let url = NSURL(string: "https://api.soundcloud.com/tracks/\(track.id)/stream?client_id=\(clientID)")!
+            let song = AVPlayerItem(URL: url)
+            player.replaceCurrentItemWithPlayerItem(song)
+            if player.rate == 1.0 {
+                if player.currentItem!.status == .ReadyToPlay {
+                    player.play()
+                }
+            }
+            loadTrackElements()
+            scrubber.maximumValue = Float(CMTimeGetSeconds(player.currentItem!.asset.duration))
+            NSTimer.scheduledTimerWithTimeInterval(1, target: self, selector: #selector(timerAction), userInfo: nil, repeats: true)
+        }
     }
 
     /*
@@ -154,7 +204,30 @@ class PlayerViewController: UIViewController {
      */
 
     func previousTrackTapped(sender: UIButton) {
-    
+        let path = NSBundle.mainBundle().pathForResource("Info", ofType: "plist")
+        let clientID = NSDictionary(contentsOfFile: path!)?.valueForKey("client_id") as! String
+        if CMTimeGetSeconds(player.currentTime()) > 3.0 {
+            player.seekToTime(CMTimeMakeWithSeconds(0.0, 1))
+        } else {
+            if currentIndex > 0 {
+                currentIndex = currentIndex - 1
+                let track = tracks[currentIndex]
+                let url = NSURL(string: "https://api.soundcloud.com/tracks/\(track.id)/stream?client_id=\(clientID)")!
+                let song = AVPlayerItem(URL: url)
+                player.replaceCurrentItemWithPlayerItem(song)
+                if player.rate == 1.0 {
+                    if player.currentItem!.status == .ReadyToPlay {
+                        player.play()
+                    }
+                }
+                loadTrackElements()
+            } else {
+                player.seekToTime(CMTimeMakeWithSeconds(0.0, 1))
+            }
+        }
+        scrubber.value = 0.0
+        scrubber.maximumValue = Float(CMTimeGetSeconds(player.currentItem!.asset.duration))
+        NSTimer.scheduledTimerWithTimeInterval(1, target: self, selector: #selector(timerAction), userInfo: nil, repeats: true)
     }
     
     
@@ -179,6 +252,14 @@ class PlayerViewController: UIViewController {
     func didLoadTracks(tracks: [Track]) {
         self.tracks = tracks
         loadTrackElements()
+        let path = NSBundle.mainBundle().pathForResource("Info", ofType: "plist")
+        let clientID = NSDictionary(contentsOfFile: path!)?.valueForKey("client_id") as! String
+        let track = tracks[currentIndex]
+        let url = NSURL(string: "https://api.soundcloud.com/tracks/\(track.id)/stream?client_id=\(clientID)")!
+        if player.status == .Unknown {
+            let song = AVPlayerItem(URL: url)
+            player = AVPlayer(playerItem: song)
+        }
     }
 }
 
